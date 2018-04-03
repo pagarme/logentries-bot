@@ -1,3 +1,4 @@
+import time
 import ast
 import json
 import uuid
@@ -217,3 +218,25 @@ def get_jobs(callback):
     callback("Running jobs: ")
     for job in jobs:
         callback("job_id: *{}* watching company *{}*".format(job.id, job.name))
+
+
+def deploy(quantity, unit, callback):
+
+    logs = LogentriesHelper.get_all_test_environment()
+    query = Query()\
+        .where('method="POST"')\
+        .and_('/transactions/')\
+        .logs(logs)
+
+    client = LogentriesConnection(config('LOGENTRIES_API_KEY'))
+
+    response = client.post('/query/live/logs', query.build())
+    while True:
+        continue_url = response.json()['links'][0]['href'][27:]
+        response = client.get(continue_url).json()
+
+        if len(response['events']) > 0:
+            message = response['events'][0]['message']
+            print(message)
+
+    callback("Deploy mode activated")

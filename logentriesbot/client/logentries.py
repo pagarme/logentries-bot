@@ -27,7 +27,7 @@ class LogentriesConnection(object):
         response = requests.get(url, headers=self._build_headers())
         return response
 
-    def _post(self, path, query):
+    def post(self, path, query):
         headers = self._build_headers()
         path = "{0}{1}".format(self.API_URL, path)
 
@@ -36,13 +36,15 @@ class LogentriesConnection(object):
             json=query,
             headers=headers
         )
+        return response
 
-        while response.status_code >= 200:
-            if 'links' in response.json():
-                continue_url = response.json()['links'][0]['href']
-                response = requests.get(continue_url, headers=headers)
-            else:
-                return json.dumps(response.json(), indent=4)
+        #TODO add optional 'tail' parameter
+        # while response.status_code >= 200:
+        #     if 'links' in response.json():
+        #         continue_url = response.json()['links'][0]['href']
+        #         response = requests.get(continue_url, headers=headers)
+        #     else:
+        #         return json.dumps(response.json(), indent=4)
 
     def query(self, query):
         response = self._post("/query/logs", query)

@@ -2,7 +2,7 @@ from logentriesbot.bots.bot import Bot
 from logentriesbot.bots.parametersParser import ParametersParser
 from logentriesbot.client.logentries import LogentriesConnection, Query
 from logentriesbot.client.logentrieshelper import LogentriesHelper, Time
-from logentriesbot.monitoring import add_company, remove_company, get_jobs
+from logentriesbot.monitoring import add_company, remove_company, get_jobs, deploy
 from prettyconf import config
 
 
@@ -32,6 +32,14 @@ class LogWatcher(Bot):
             },
             "get_jobs": {
                 "fn": self.get_jobs,
+                "async": True
+            },
+            "deploy": {
+                "fn": self.deploy,
+                "params": [
+                    {"name": "quantity", "required": True},
+                    {"name": "unit", "required": True}
+                ],
                 "async": True
             },
             "query": {
@@ -77,6 +85,20 @@ class LogWatcher(Bot):
 
     def get_jobs(self, params, callback):
         return get_jobs(callback)
+
+    def deploy(self, params, callback):
+        params_spec = self.commands["deploy"]["params"]
+
+        try:
+            parsed_params = ParametersParser(params_spec).parse(params)
+        except Exception as e:
+            callback(str(e))
+            return e
+
+        quantity = int(parsed_params["quantity"])
+        unit = parsed_params["unit"]
+
+        return deploy(quantity, unit, callback)
 
     def query(self, params):
         for c in params:
