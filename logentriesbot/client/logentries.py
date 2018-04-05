@@ -1,5 +1,6 @@
 import json
 import requests
+import aiohttp
 from datetime import datetime
 
 
@@ -19,6 +20,16 @@ class LogentriesConnection(object):
 
         return logs
 
+    async def get_logset_logs_async(self, logset_id):
+        path = "/management/logsets/{0}".format(logset_id)
+        response = await self.get_async(path)
+
+        logs = []
+        for log in response['logset']['logs_info']:
+            logs.append(log['id'])
+
+        return logs
+
     def _build_headers(self):
         return {'x-api-key': self.key}
 
@@ -26,6 +37,14 @@ class LogentriesConnection(object):
         url = "{0}{1}".format(self.API_URL, path)
         response = requests.get(url, headers=self._build_headers())
         return response
+
+    async def get_async(self, path):
+        headers = self._build_headers()
+        url = "{0}{1}".format(self.API_URL, path)
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                return await response.json()
 
     def post(self, path, query):
         headers = self._build_headers()
@@ -45,6 +64,14 @@ class LogentriesConnection(object):
         #         response = requests.get(continue_url, headers=headers)
         #     else:
         #         return json.dumps(response.json(), indent=4)
+
+    async def post_async(self, path, query):
+        headers = self._build_headers()
+        url = "{0}{1}".format(self.API_URL, path)
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=query, headers=headers) as response:
+                return await response.json()
 
     def query(self, query):
         response = self._post("/query/logs", query)

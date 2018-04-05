@@ -1,11 +1,12 @@
-import time
+import asyncio
 import ast
 import json
 import uuid
 from urllib.parse import quote
-from datetime import datetime
+from datetime import datetime, timedelta
 from prettyconf import config
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from logentriesbot.client.logentries import LogentriesConnection, Query
 from logentriesbot.client.logentrieshelper import LogentriesHelper, Time
@@ -14,6 +15,13 @@ from logentriesbot.client.slack import SlackAttachment
 
 scheduler = BackgroundScheduler()
 scheduler.start()
+
+job_defaults = {
+    'coalesce': False,
+    'max_instances': 10
+}
+asyncScheduler = AsyncIOScheduler(job_defaults=job_defaults)
+asyncScheduler.start()
 
 
 def check(job_id, company_id, quantity, unit, callback, status_code=400):
@@ -220,9 +228,8 @@ def get_jobs(callback):
         callback("job_id: *{}* watching company *{}*".format(job.id, job.name))
 
 
-def deploy(quantity, unit, callback):
-
-    logs = LogentriesHelper.get_all_test_environment()
+async def live_monitor(quantity, unit):
+    logs = await LogentriesHelper.get_all_test_environment_async()
     query = Query()\
         .where('method="POST"')\
         .and_('/transactions/')\
@@ -230,13 +237,38 @@ def deploy(quantity, unit, callback):
 
     client = LogentriesConnection(config('LOGENTRIES_API_KEY'))
 
-    response = client.post('/query/live/logs', query.build())
-    while True:
-        continue_url = response.json()['links'][0]['href'][27:]
-        response = client.get(continue_url).json()
+    response = await client.post_async('/query/live/logs', query.build())
+    continue_url = response['links'][0]['href'][27:]
 
-        if len(response['events']) > 0:
-            message = response['events'][0]['message']
-            print(message)
+    diff = {unit: quantity}
+    deadline = datetime.now() + timedelta(**diff)
 
-    callback("Deploy mode activated")
+    asyncScheduler.add_job(
+        live_monitor_request,
+        'interval',
+        [continue_url, deadline],
+        seconds=1,
+        id='live_monitor'
+    )
+
+
+async def live_monitor_request(url, deadline):
+    now = datetime.now()
+    print('{0} : {1} ? {2}'.format(now, deadline, now >= deadline))
+    if now >= deadline:
+        await kill_live_monitor_request('live_monitor')
+
+    client = LogentriesConnection(config('LOGENTRIES_API_KEY'))
+    response = await client.get_async(url)
+    print(len(response['events']))
+
+
+async def kill_live_monitor_request(id):
+    asyncScheduler.remove_job(id)
+
+
+def deploy(quantity, unit, callback):
+    ioloop = asyncio.get_event_loop()
+    ioloop.create_task(live_monitor(quantity, unit))
+
+    ioloop.run_forever()

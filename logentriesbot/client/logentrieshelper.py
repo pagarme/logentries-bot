@@ -14,12 +14,28 @@ class LogentriesHelper(object):
         ).get_logset_logs(all_live_environment_id)
 
     @staticmethod
+    async def get_all_live_environment_async():
+        all_live_environment_id = 'acd35399-1eb3-45f2-a79e-701b9733a50c'
+
+        return await LogentriesConnection(
+            config('LOGENTRIES_API_KEY')
+        ).get_logset_logs_async(all_live_environment_id)
+
+    @staticmethod
     def get_all_test_environment():
         all_test_environment_id = 'a908909c-9217-4feb-83b7-0ed4798fca3a'
 
         return LogentriesConnection(
             config('LOGENTRIES_API_KEY')
         ).get_logset_logs(all_test_environment_id)
+
+    @staticmethod
+    async def get_all_test_environment_async():
+        all_test_environment_id = 'a908909c-9217-4feb-83b7-0ed4798fca3a'
+
+        return await LogentriesConnection(
+            config('LOGENTRIES_API_KEY')
+        ).get_logset_logs_async(all_test_environment_id)
 
 
 class Time(object):
