@@ -1,27 +1,25 @@
-import asyncio
 import ast
 import json
 import uuid
 from urllib.parse import quote
-from datetime import datetime, timedelta
+from datetime import datetime
 from prettyconf import config
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from logentriesbot.client.logentries import LogentriesConnection, Query
 from logentriesbot.client.logentrieshelper import LogentriesHelper, Time
 from logentriesbot.helpers import implode
 from logentriesbot.client.slack import SlackAttachment
-
-scheduler = BackgroundScheduler()
-scheduler.start()
+from logentriesbot.scheduleHelpers import Job, ContextScheduler
+import settings
 
 job_defaults = {
     'coalesce': False,
     'max_instances': 10
 }
-asyncScheduler = AsyncIOScheduler(job_defaults=job_defaults)
-asyncScheduler.start()
+
+scheduler = BackgroundScheduler(job_defaults=job_defaults)
+scheduler.start()
 
 
 def check(job_id, company_id, quantity, unit, callback, status_code=400):
@@ -32,7 +30,9 @@ def check(job_id, company_id, quantity, unit, callback, status_code=400):
 
     errors = get_how_many(company_id, from_time, status_code)
 
-    link = "https://logentries.com/app/73cd17bb#/search/logs/?log_q={}".format(quote(errors["query"]))
+    link = "https://logentries.com/app/73cd17bb#/search/logs/?log_q={}".format(
+        quote(errors["query"])
+    )
 
     report = "{} errors in last {} {}".format(
         errors['errors'], str(quantity), unit
@@ -228,47 +228,95 @@ def get_jobs(callback):
         callback("job_id: *{}* watching company *{}*".format(job.id, job.name))
 
 
-async def live_monitor(quantity, unit):
-    logs = await LogentriesHelper.get_all_test_environment_async()
+def live_monitor(period, notification_interval, callback):
+    callback("Getting live monitoring URL...")
+
+    logs = LogentriesHelper.get_all_live_environment()
     query = Query()\
         .where('method="POST"')\
         .and_('/transactions/')\
+        .and_('from="response"')\
         .logs(logs)
 
     client = LogentriesConnection(config('LOGENTRIES_API_KEY'))
 
-    response = await client.post_async('/query/live/logs', query.build())
+    response = client.post('/query/live/logs', query.build())
     continue_url = response['links'][0]['href'][27:]
 
-    diff = {unit: quantity}
-    deadline = datetime.now() + timedelta(**diff)
+    def on_start(context):
+        end_date = "undefined"
+        if context.deadline is not None:
+            end_date = context.deadline_date
 
-    asyncScheduler.add_job(
-        live_monitor_request,
-        'interval',
-        [continue_url, deadline],
-        seconds=1,
-        id='live_monitor'
+        callback(
+            "Live monitoring started. End date is {}\nID: {}".format(end_date, context.id)
+        )
+
+    def on_end(context):
+        callback(
+            "Live monitoring ended"
+        )
+
+    deadline = None
+    if period is not None:
+        [unit, quantity] = period.split(":")
+        deadline = {unit: int(quantity)}
+
+    [unit, quantity] = notification_interval.split(":")
+    notification_interval = {unit: int(quantity)}
+
+    context = ContextScheduler(
+        settings.scheduler,
+        data={
+            'request_count': 0,
+            'errors_count': 0,
+            'continue_url': continue_url,
+            'slack_callback': callback
+        },
+        deadline=deadline,
+        on_start=on_start,
+        on_end=on_end
     )
 
+    request_job = Job(
+        live_monitor_request, 'interval', seconds=1
+    )
 
-async def live_monitor_request(url, deadline):
-    now = datetime.now()
-    print('{0} : {1} ? {2}'.format(now, deadline, now >= deadline))
-    if now >= deadline:
-        await kill_live_monitor_request('live_monitor')
+    notification_job = Job(
+        live_notification, 'interval', **notification_interval
+    )
 
+    context.attach_job(request_job)
+    context.attach_job(notification_job)
+    context.start()
+
+
+def live_notification(context):
+    fn = context.data['slack_callback']
+    fn("Requests: {}\nErrors: {}".format(
+        context.data['request_count'],
+        context.data['errors_count']
+    ))
+
+
+def live_monitor_request(context):
     client = LogentriesConnection(config('LOGENTRIES_API_KEY'))
-    response = await client.get_async(url)
-    print(len(response['events']))
+    response = client.get(context.data['continue_url'])
+    context.data['request_count'] += len(response['events'])
+
+    for response in response['events']:
+        payload = json.loads(response['message'][1:])
+        if payload['statusCode'] != 200:
+            context.data['errors_count'] += 1
 
 
-async def kill_live_monitor_request(id):
-    asyncScheduler.remove_job(id)
+def stop_live_monitor(context_id, callback):
+    context = ContextScheduler.get_context(context_id)
+
+    if context is not None:
+        context.stop()
+        context.clear()
 
 
-def deploy(quantity, unit, callback):
-    ioloop = asyncio.get_event_loop()
-    ioloop.create_task(live_monitor(quantity, unit))
-
-    ioloop.run_forever()
+def deploy(period, notification_interval, callback):
+    live_monitor(period, notification_interval, callback)

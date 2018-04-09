@@ -12,7 +12,7 @@ class LogentriesConnection(object):
 
     def get_logset_logs(self, logset_id):
         path = "/management/logsets/{0}".format(logset_id)
-        response = self.get(path).json()
+        response = self.get(path)
 
         logs = []
         for log in response['logset']['logs_info']:
@@ -36,7 +36,7 @@ class LogentriesConnection(object):
     def get(self, path):
         url = "{0}{1}".format(self.API_URL, path)
         response = requests.get(url, headers=self._build_headers())
-        return response
+        return response.json()
 
     async def get_async(self, path):
         headers = self._build_headers()
@@ -55,7 +55,8 @@ class LogentriesConnection(object):
             json=query,
             headers=headers
         )
-        return response
+
+        return response.json()
 
         #TODO add optional 'tail' parameter
         # while response.status_code >= 200:

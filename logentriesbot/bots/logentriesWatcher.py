@@ -2,7 +2,7 @@ from logentriesbot.bots.bot import Bot
 from logentriesbot.bots.parametersParser import ParametersParser
 from logentriesbot.client.logentries import LogentriesConnection, Query
 from logentriesbot.client.logentrieshelper import LogentriesHelper, Time
-from logentriesbot.monitoring import add_company, remove_company, get_jobs, deploy
+from logentriesbot.monitoring import add_company, remove_company, get_jobs, deploy, stop_live_monitor
 from prettyconf import config
 
 
@@ -37,8 +37,15 @@ class LogWatcher(Bot):
             "deploy": {
                 "fn": self.deploy,
                 "params": [
-                    {"name": "quantity", "required": True},
-                    {"name": "unit", "required": True}
+                    {"name": "period", "required": False},
+                    {"name": "message_interval", "required": True}
+                ],
+                "async": True
+            },
+            "stopdeploy": {
+                "fn": self.stop_deploy,
+                "params": [
+                    {"name": "context_id", "required": True}
                 ],
                 "async": True
             },
@@ -91,14 +98,33 @@ class LogWatcher(Bot):
 
         try:
             parsed_params = ParametersParser(params_spec).parse(params)
+
+            period = parsed_params["period"] if "period" in parsed_params else None
+            interval = parsed_params["message_interval"]
+
+            if period is not None and len(period.split(":")) != 2:
+                raise Exception("Invalid format for period")
+
+            if len(interval.split(":")) != 2:
+                raise Exception("Invalid format for interval")
+
+            return deploy(period, interval, callback)
         except Exception as e:
             callback(str(e))
             return e
 
-        quantity = int(parsed_params["quantity"])
-        unit = parsed_params["unit"]
+    def stop_deploy(self, params, callback):
+        params_spec = self.commands["stopdeploy"]["params"]
 
-        return deploy(quantity, unit, callback)
+        try:
+            parsed_params = ParametersParser(params_spec).parse(params)
+
+            context_id = parsed_params["context_id"]
+
+            return stop_live_monitor(context_id, callback)
+        except Exception as e:
+            callback(str(e))
+            return e
 
     def query(self, params):
         for c in params:

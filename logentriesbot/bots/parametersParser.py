@@ -93,7 +93,7 @@ class ParametersParser(object):
         is_required = False
 
         for param_spec in self.spec:
-            if param_spec["required"] is True:
+            if param_spec["name"] == param_name and param_spec["required"] is True:
                 is_required = True
 
         return is_required
