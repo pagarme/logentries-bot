@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+    name: logentries-bot
+    title: Logentries Bot
+    description: Bot designed to help supporters to get insights from LogEntries error logs in order to help customers proactively.
+    namespace: stone
+    tags:
+      - slack
+      - security
+spec:
+    type: service
+    owner: stone-payments/soc-sre-writer
+    lifecycle: production
